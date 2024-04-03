@@ -1,0 +1,453 @@
+
+---
+title: "Social Network Analysis: Centrality Measures Example with the Medici Network"
+author: 
+  - Sabrina Nardin
+  - Loizos Bitsikokos
+date: "2024-03-31"
+output: github_document
+---
+
+# Introduction
+
+For this tutorial, we use the Florentine families dataset by Padget & Ansell, 1993 (reading on Canvas). This is a network composed of marriage links. 
+
+Our goal is to practice getting and manipulating network data, explore network statistics, centrality measures and network visualization techniques. These are some of the most fundamental skills needed in network analysis and the tutorial is designed in a way to provide universal skills in extracting, entering, and analyzing network data.
+
+You are encouraged to tweak and modify the code on your own to practice.
+
+# Setup
+
+We were doing analyses in `igraph` but the Medici wedding network comes with `statnet`, so let's first import `statnet` along with other libraries we will be using throughout the code.
+
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+library(statnet) 
+library(kableExtra)
+```
+
+# Loading network data
+
+The network data we are using are pre-loaded in `statnet.` Therefore, we can just call `data(flo)` to get a variable `flo` in our Environment containing the network's adjacency matrix:
+
+```{r load-data}
+# load Medici data stored as symmetric adjacency matrix
+data(flo)
+
+# display data, more pretty with kable()
+flo %>% kable()
+```
+
+We can also export the matrix in a `csv` file:
+```{r export-example}
+write.csv(flo, file = "flo.csv")
+```
+
+and we can also import data from a `csv` file:
+```{r import-example}
+flo_df <- read.csv("flo.csv", 
+                   header = TRUE, 
+                   row.names = 1, # data has row names stored in first column
+                   as.is = TRUE)  # do not convert character into factor
+```
+
+This `flo_df` object is actually a `r class(flo_df)`. We can turn this back into a matrix like so:
+
+```{r turn-to-matrix}
+# turn df into matrix
+flo_matrix <- as.matrix(flo_df)
+mode(flo_matrix) <- "numeric"
+
+# display
+flo_matrix %>% kable()
+```
+
+ Check that running  `class(flomatrix)` returns the class: `r class(flo_matrix)`
+
+# Network Analysis
+
+## Building the Network
+
+The following code illustrates how to convert the dataset into a network object and plot the initial network graph.
+
+```{r}
+# detach "statnet" and attach "igraph" for the analysis
+# you can also run centrality measures with "statnet" rather than "igraph", see Luke's book
+detach("package:statnet", unload=TRUE)
+library(igraph)
+
+# convert adj matrix "flo" to an igraph object
+nflo <- graph_from_adjacency_matrix(flo, mode = "undirected")   
+```
+Check that running `class(nflo)` returns: `r class(nflo)`. 
+
+We can also plot the graph:
+```{r}
+# display
+plot(nflo, displaylabels=TRUE, boxed.labels=FALSE, label.cex=0.75)
+
+```
+
+## Network properties
+
+We can also get all kinds of summary statistics directly through `igraph`. You are advised to dig into the documentation on your own, but here are a couple of useful measures:
+
+- Graph size: `gsize(nflo)` = `r gsize(nflo)`.
+- Graph density: `graph.density(nflo)` = `r graph.density(nflo)`
+- Graph diameter: `diameter(nflo)` = `r diameter(nflo)`
+
+Here are the summary statistics in a single code chunk for your reference:
+```{r, eval=FALSE}
+# some summary statistics in igraph
+gsize(nflo)
+graph.density(nflo)
+diameter(nflo)
+```
+
+We can also access any attributes that the nodes/edges of the network have through:
+
+```{r}
+# access network attributes
+edge_attr(nflo) # this is an empty list, there are no edge attributes
+vertex_attr(nflo) 
+```
+
+Getting the nodes and and edges of the network is fairly simple, too:
+
+```{r}
+V(nflo)  # 16 families
+E(nflo)  # 20 ties
+```
+
+We can choose also present the network as an edge list:
+```{r}
+as_edgelist(nflo)
+```
+
+
+or an adjacency matrix
+```{r}
+as_adjacency_matrix(nflo)
+```
+or we could get the nodes and edges as dataframes:
+```{r}
+e <- as_data_frame(nflo, what="edges")
+v <- as_data_frame(nflo, what="vertices")
+
+e %>% kable()
+```
+
+
+## Subsetting nodes
+
+We can also create a subnetwork by subsetting nodes from the initial network based on a condition. Let's say that we wanted to filter out isolated nodes.
+
+Let's first find if there are isolated nodes:
+
+```{r}
+# remove isolates and plot again
+isol <- which(degree(nflo)==0)
+isol
+```
+Seems like Pucci is an isolated node in the graph (a node with no edges).
+
+We can go on and delete that node from the network and visualize it:
+
+```{r}
+# delete Pucci
+nflo2 <- delete.vertices(nflo, isol)
+
+# visualize new subnetwork
+plot(nflo2, displaylabels=TRUE, boxed.labels=FALSE, label.cex=0.75)
+
+```
+
+## Centrality Measures
+
+There are multiple centrality measures developed for network analysis. 
+We limit the discussion here, to a subset of popular measures that come with `igraph`, known as the “big four” measures (degree, betweenness, closeness, and eigenvector).
+
+In the following, we introduce:
+
+- Degree Centrality
+  - In-degree
+  - Out-degree
+- Eigenvector Centrality
+- Closeness Centrality
+- Betweenness Centrality
+
+
+### Degree Centrality
+
+The simplest centrality measure is the degree of each node. A simple interpretation for degree centrality is that each node is assigned a centrality score of 1 for each of their neighbors.
+
+```{r deegree-centrality}
+
+# calculate 
+degree(nflo2)
+```
+
+It might be useful to sort the value in decreasing order, to find the most "central" nodes in the network: 
+```{r}
+# sort
+sort(degree(nflo2), decreasing = TRUE)
+```
+
+We could also normalize centralities, directly through the `degree()` function:
+```{r}
+# degree centrality normalized
+deg_n <- degree(nflo2, normalized = TRUE)
+sort(deg_n, decreasing = TRUE)
+```
+
+or manually, like so:
+```{r}
+# same thing
+deg_n2 <- degree(nflo2, loops = FALSE) / (vcount(nflo2) - 1)
+sort(deg_n2, decreasing = TRUE)
+
+```
+
+What's the interpretation of these calculations?
+
+### Eigenvector Centrality
+
+Eigenvector centrality is based on the assumption that not all nodes on the network are equal, hence the centrality of a node is increased if its neighbors are also central (we assign to each node a centrality score analogous to the sum of the scores of its neighbors).
+
+To calculate it we can run, the following, where we also sorted in a decreasing order:
+
+```{r eigenvector-centrality}
+# calculate and sort 
+sort(evcent(nflo2, scale = FALSE)[[1]], decreasing = TRUE)
+```
+
+
+### Closeness Centrality
+
+Closeness is a centrality measure a bit different from degree and eigenvector, since it measures the mean distance between nodes.
+
+To calculate it we can run:
+```{r closeness-centrality}
+# calculate and sort
+sort(closeness(nflo2), decreasing = TRUE)
+```
+
+and it similarly normalized like so:
+```{r}
+# normalize 
+close_n <- closeness(nflo2, normalized = TRUE)
+sort(close_n, decreasing = TRUE)
+```
+
+### Betweenness Centrality
+
+Betweeness is a measure of how much each node lies in the paths between other nodes.
+
+To calculate it:
+```{r betweenness-centrality}
+sort(betweenness(nflo2), decreasing = TRUE)
+```
+
+and normalize:
+```{r}
+# normalize 
+btw_n <- betweenness(nflo2, normalized = TRUE)
+sort(btw_n, decreasing = TRUE)
+```
+
+
+## Comparison of Centrality Measures
+
+Since there are multiple ways to get centrality, each one based on its own assumptions of what centrality is, it is very useful to compare them in order to better understand which nodes are the most influential.
+
+Let's aggregate some measures in a dataframe:
+
+```{r comparison}
+# collect measures in a dataframe
+all_centr <- data.frame(deg_n, close_n, btw_n)
+
+# visualize
+plot(all_centr)
+
+```
+
+As we can see in the plot above, there are some clear relationships between different centrality measures.
+
+It is thus useful to checkout the correlation coefficients between different measures: 
+```{r}
+cor(all_centr) %>% kable()
+
+```
+
+# Network Visualization
+
+We already saw some ways to present a network through dataframes, adjacency matrices, node and edge lists, and even visualized with dots and lines. In the following we will focus on network visualization.
+
+The most basic way to visualize a network is thorugh:
+```{r}
+plot(nflo)
+```
+
+
+## Adjust size and color
+
+There are two ways to adjust size and color of nodes and edges.
+
+### Option 1
+
+Specify node & edge options in plot()
+
+```{r}
+# set node and edge parameters
+plot(nflo,
+     # node parameters
+     vertex.size = 15,
+     vertex.color = "orange", 
+     vertex.frame.color = NA,
+     # edge parameters
+     edge.arrow.size = 0.2,
+     edge.color = "orange",
+     edge.width = .7,
+     edge.curved = .1)
+```
+
+
+We can also adjust the label parameters:
+
+```{r}
+plot(nflo, 
+     # node parameters
+     vertex.size = 15,
+     vertex.color = "orange", 
+     vertex.frame.color = NA,
+     # edge parameters
+     edge.arrow.size = 0.2,
+     edge.color = "orange",
+     edge.width = .7,
+     edge.curved = .1,
+     # label parameters
+     vertex.label.cex = .7,   # node label size
+     vertex.label.color = "black",
+     vertex.label = V(nflo)$name, # set to NA to hide labels
+     vertex.label.dist= 2)
+```
+
+### Option 2
+
+Add node and edge options to the igraph object:
+
+```{r}
+
+# calculate degree 
+deg <- degree(nflo, mode="all")
+
+# save as a new node attribute, size, in nflo
+V(nflo)$size <- deg*5
+
+# add it to the previous plot
+# copy/past code above: change vertex size to V(nflo)$size
+plot(nflo, 
+     # node parameters
+     vertex.size = V(nflo)$size,
+     vertex.color = "orange", 
+     vertex.frame.color = NA,
+     # edge parameters
+     edge.arrow.size = 0.2,
+     edge.color = "orange",
+     edge.width = .7,
+     edge.curved = .1,
+     # label parameters
+     vertex.label.cex = .7,   # node label size
+     vertex.label.color = "black",
+     vertex.label = V(nflo)$name, # set to NA to hide labels
+     vertex.label.dist= 2)
+
+```
+
+## Layouts
+
+Another customization that we can do in the plot is change the layout of nodes on the space.
+
+For example, nodes can be arranged on a circle:
+```{r}
+
+# circular
+plot(nflo, layout = layout_in_circle, main = "Medici circle layout")
+```
+
+or randomly:
+```{r}
+# randomly
+plot(nflo, layout = layout_randomly,  main ="Medici random layout")
+```
+
+Another popular force directed layout it the Fruchterman-Reingold:
+```{r}
+# layout_with_fr(nflo)
+# par(mar = (c(0,0,0,0)))
+plot(nflo, layout = layout_with_fr)
+```
+
+We can also save the layout in a variable like so:
+```{r}
+# save layout coordinates to get same results
+fr <- layout_with_fr(nflo)  
+fr
+```
+and then plot:
+```{r}
+plot(nflo, layout = fr)
+```
+
+Setting a seed will make the visualization reproducible (the layout will be the same across runs):
+```{r}
+# set seed to make it reproducible
+set.seed(1)
+fr <- layout_with_fr(nflo)  
+plot(nflo, layout = fr)
+
+```
+Feel free to incorporate all the previous information in your custom plot by adding a layout parameter.
+
+## Removing loops
+```{r}
+# set margin parameters
+par(mar = (c(0,0,0,0)))
+# plot(nflo, layout = fr)
+
+# remove loops
+nflo <- simplify(nflo, remove.multiple = F, remove.loops = T) 
+
+# remove isolates and plot again
+isol <- which(degree(nflo)==0)
+nflo2 <- delete.vertices(nflo, isol)
+plot(nflo2, displaylabels=TRUE, label.cex=0.75)
+
+
+```
+
+# Additional resources and tips
+
+## igraph
+
+- Check the documentation!
+- Luke's book Chapters 4, 5, and 6 
+- Katya Ognayanova Vis in igraph tutorial https://kateto.net/network-visualization
+
+notes: 
+  - igraph is better than statnet for plotting but you can plot with statnet as well:
+  - see Oganyanova tutorial above and Luke's book for more
+  - you can also integrate igraph with ggplot2:
+  - to do so, see: 5.2 A ggraph package example (for ggplot2 users) in Oganyanova tutorial above
+
+## Gephi
+ - Visualizations in [Gephi](https://gephi.org/)  
+ - Katya Ognayanova Vis in Gephi [tutorial](https://kateto.net/wp-content/uploads/2016/04/Gephi%20Handout%20Sunbelt%202016.pdf) 
+
+# Sources
+
+- Murphy, P., & Knapp, B. (2020). RPubs - Centrality in statnet. Rpubs.com. https://rpubs.com/pjmurphy/546652
+- Murphy, P., & Knapp, B. (2021). RPubs - Centrality Options in igraph. Rpubs.com. https://rpubs.com/pjmurphy/igraphCentrality
+- Newman, M. (2010). *Networks: An Introduction*. Oxford University Press.
+- Padgett, J. F., & Ansell, C. K. (1993). Robust Action and the Rise of the Medici, 1400-1434. *American Journal of Sociology, 98*(6), 1259–1319. https://doi.org/10.1086/230190
+- [Use Case: Florentine Families](https://cran.r-project.org/web/packages/netrankr/vignettes/use_case.html)
